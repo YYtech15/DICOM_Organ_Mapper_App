@@ -1,0 +1,9 @@
+numpy
+tqdm
+pydicom
+nibabel
+matplotlib
+scipy
+pytest
+Flask
+Flask-CORS

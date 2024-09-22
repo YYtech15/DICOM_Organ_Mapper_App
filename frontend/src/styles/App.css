@@ -1,0 +1,40 @@
+/* src/styles/App.css */
+
+.app-container {
+  text-align: center;
+}
+
+.viewer-container {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.slice-viewer {
+  margin: 10px;
+}
+
+.image-container {
+  overflow: hidden;
+  width: 256px;
+  height: 256px;
+  margin: 0 auto;
+}
+
+.image-container img {
+  width: 100%;
+  height: auto;
+}
+
+.controls {
+  margin-top: 10px;
+}
+
+.control-group {
+  margin-bottom: 5px;
+}
+
+.responsive-image {
+  max-width: 100%;
+  height: auto;
+}
