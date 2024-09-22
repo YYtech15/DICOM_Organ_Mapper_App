@@ -1,0 +1,28 @@
+# このファイルは app/ ディレクトリ（リポジトリのルート）に配置してください
+
+# Set the default behavior, in case people don't have core.autocrlf set.
+* text=auto
+
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout.
+*.js text
+*.ts text
+*.tsx text
+*.json text
+*.md text
+*.html text
+*.css text
+*.py text
+
+# Denote all files that are truly binary and should not be modified.
+*.png binary
+*.jpg binary
+*.gif binary
+
+# フロントエンド固有のファイル
+frontend/*.js text eol=lf
+frontend/*.ts text eol=lf
+frontend/*.tsx text eol=lf
+
+# バックエンド固有のファイル
+backend/*.py text eol=lf
