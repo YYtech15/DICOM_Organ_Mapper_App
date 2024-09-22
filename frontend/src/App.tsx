@@ -145,7 +145,9 @@ const App: React.FC = () => {
                 ))}
               </div>
             )}
-            <button onClick={regenerateImage}>画像を再生成</button>
+            <div className='regenerate-button'>
+              <button onClick={regenerateImage}>画像を再生成</button>
+            </div>
           </div>
         )
       ) : (
