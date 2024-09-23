@@ -10,7 +10,6 @@ from src.utils.dicom import load_dicom
 from src.utils.nifti import load_nifti
 from src.utils.rotate import apply_rotation
 from src.utils.save import save_visualization
-from src.utils.path import get_relative_path
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
@@ -31,6 +30,9 @@ USERS = {
 
 # セッションデータを保存するための辞書
 SESSION_DATA = {}
+
+TransposeOrder = (1, 2, 0)
+RotationAngles = (180, 0, 90)
 
 def allowed_file(filename):
     """許可されたファイル拡張子かどうかをチェック"""
@@ -106,8 +108,6 @@ def upload_files():
                 nifti_info = {
                     'path': file_path,
                     'value': idx + 2,  # 値は2から始まる（1は背景として予約）
-                    'transpose_order': (2, 0, 1),
-                    'rotation_angles': (90, 0, 180)
                 }
                 nifti_info_list.append(nifti_info)
             else:
@@ -126,9 +126,9 @@ def upload_files():
     # 処理と可視化
     output_file = os.path.join(user_upload_dir, 'output_visualization.png')
     try:
-        new_3d_array = create_3d_array(dicom_dir, nifti_info_list)
+        new_3d_array, dicom_array = create_3d_array(dicom_dir, nifti_info_list)
         SESSION_DATA[user_id]['new_3d_array'] = new_3d_array
-        SESSION_DATA[user_id]['dicom_data'] = load_dicom(dicom_dir)
+        SESSION_DATA[user_id]['dicom_data'] = dicom_array
         
         visualize_3d_array(new_3d_array, SESSION_DATA[user_id]['dicom_data'], output_file, midpoints)
         return send_file(output_file, mimetype='image/png')
@@ -157,19 +157,19 @@ def create_custom_cmap(colors):
 def create_3d_array(dicom_path, nifti_data):
     """DICOMと複数のNIFTIデータから新たな3次元配列を作成"""
     dicom_data = load_dicom(dicom_path)
-    new_3d_array = dicom_data.copy()
+    rotation_data = np.transpose(dicom_data, TransposeOrder)
+    dicom_array = apply_rotation(rotation_data, RotationAngles)
+    new_3d_array = dicom_array.copy()
 
     for nifti_info in nifti_data:
-        data = load_nifti(nifti_info['path'], nifti_info['value'])
-        rotation_data = np.transpose(data, nifti_info['transpose_order'])
-        nifti_array = apply_rotation(rotation_data, nifti_info['rotation_angles'])
+        nifti_array = load_nifti(nifti_info['path'], nifti_info['value'])
 
-        if dicom_data.shape != nifti_array.shape:
+        if dicom_array.shape != nifti_array.shape:
             raise ValueError(f"DICOM and NIFTI data sizes do not match for {nifti_info['path']}")
 
         new_3d_array = np.where(nifti_array != 0, nifti_info['value'], new_3d_array)
 
-    return new_3d_array
+    return new_3d_array, dicom_array
 
 def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
     """3次元配列を可視化"""
