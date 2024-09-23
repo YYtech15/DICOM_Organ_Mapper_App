@@ -1,4 +1,3 @@
-// src/components/SliceViewer.tsx
 import React, { useState, useEffect } from 'react';
 import Controls from './Controls';
 
@@ -7,7 +6,7 @@ interface SliceViewerProps {
   maxIndex: number;
 }
 
-const SliceViewer: React.FC<SliceViewerProps> = ({ axis, maxIndex }) => {
+export default function SliceViewer({ axis, maxIndex }: SliceViewerProps) {
   const [sliceIndex, setSliceIndex] = useState(Math.floor(maxIndex / 2));
   const [imageSrc, setImageSrc] = useState('');
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -37,29 +36,46 @@ const SliceViewer: React.FC<SliceViewerProps> = ({ axis, maxIndex }) => {
   };
 
   return (
-    <div className="slice-viewer">
-      <h2>{axis} View</h2>
-      <div
-        className="image-container"
-        style={{ transform: `scale(${zoomLevel})`, filter: `contrast(${contrastLevel})` }}
-      >
-        <img src={imageSrc} alt={`${axis} slice`} />
+    <div className="bg-white shadow-md rounded-lg overflow-hidden h-full flex flex-col">
+      <h2 className="text-lg font-semibold bg-gray-100 px-4 py-2 border-b">{axis} View</h2>
+      <div className="p-4 flex-grow flex flex-col">
+        <div className="flex-grow relative overflow-hidden rounded-md">
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ 
+              transform: `scale(${zoomLevel})`,
+              transformOrigin: 'center',
+            }}
+          >
+            <img 
+              src={imageSrc} 
+              alt={`${axis} slice`} 
+              className="max-w-full max-h-full object-contain"
+              style={{ filter: `contrast(${contrastLevel})` }}
+            />
+          </div>
+        </div>
+        <div className="mt-4 space-y-2">
+          <label htmlFor={`sliceIndex-${axis}`} className="block text-sm font-medium text-gray-700">
+            Slice Index: {sliceIndex}
+          </label>
+          <input
+            id={`sliceIndex-${axis}`}
+            type="range"
+            min="0"
+            max={maxIndex}
+            value={sliceIndex}
+            onChange={handleSliderChange}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          />
+        </div>
+        <Controls
+          zoomLevel={zoomLevel}
+          onZoomChange={handleZoomChange}
+          contrastLevel={contrastLevel}
+          onContrastChange={handleContrastChange}
+        />
       </div>
-      <input
-        type="range"
-        min="0"
-        max={maxIndex}
-        value={sliceIndex}
-        onChange={handleSliderChange}
-      />
-      <Controls
-        zoomLevel={zoomLevel}
-        onZoomChange={handleZoomChange}
-        contrastLevel={contrastLevel}
-        onContrastChange={handleContrastChange}
-      />
     </div>
   );
-};
-
-export default SliceViewer;
+}

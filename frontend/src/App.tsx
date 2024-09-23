@@ -1,3 +1,5 @@
+'use client'
+
 import React, { useState, useEffect } from 'react';
 import { ClipLoader } from 'react-spinners';
 import FileUpload from './components/FileUpload';
@@ -9,13 +11,13 @@ interface ImageData {
   url: string;
 }
 
-const App: React.FC = () => {
+export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState<ImageData[]>([]);
 
   useEffect(() => {
-    // 自動ログイン処理
+    // Auto login process
     const loginData = new FormData();
     loginData.append('username', 'admin');
     loginData.append('password', 'password123');
@@ -81,30 +83,33 @@ const App: React.FC = () => {
   }, [images]);
 
   return (
-    <div className="app-container">
-      <h1>DICOM+ROIビューアー</h1>
-      {loggedIn ? (
-        isLoading ? (
-          <div className="loading-container">
-            <ClipLoader color="#123abc" loading={isLoading} size={50} />
-            <p>処理中です。しばらくお待ちください...</p>
-          </div>
-        ) : images.length === 0 ? (
-          <FileUpload
-            onUploadSuccess={handleUploadSuccess}
-            onUploadStart={handleUploadStart}
-          />
-        ) : (
-          <ImageViewer 
-            images={images} 
-            onRegenerateRequest={handleRegenerateRequest}
-          />
-        )
-      ) : (
-        <p>ログインしています...</p>
-      )}
+    <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
+      <div className="relative py-3 sm:max-w-xl sm:mx-auto">
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-light-blue-500 shadow-lg transform -skew-y-6 sm:skew-y-0 sm:-rotate-6 sm:rounded-3xl"></div>
+        <div className="relative px-4 py-10 bg-white shadow-lg sm:rounded-3xl sm:p-20">
+          <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">DICOM+ROIビューアー</h1>
+          {loggedIn ? (
+            isLoading ? (
+              <div className="flex flex-col items-center justify-center">
+                <ClipLoader color="#4F46E5" loading={isLoading} size={50} />
+                <p className="mt-4 text-gray-600">処理中です。しばらくお待ちください...</p>
+              </div>
+            ) : images.length === 0 ? (
+              <FileUpload
+                onUploadSuccess={handleUploadSuccess}
+                onUploadStart={handleUploadStart}
+              />
+            ) : (
+              <ImageViewer 
+                images={images} 
+                onRegenerateRequest={handleRegenerateRequest}
+              />
+            )
+          ) : (
+            <p className="text-center text-gray-600">ログインしています...</p>
+          )}
+        </div>
+      </div>
     </div>
   );
-};
-
-export default App;
+}

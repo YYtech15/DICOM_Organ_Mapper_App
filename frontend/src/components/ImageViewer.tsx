@@ -12,7 +12,7 @@ interface ImageViewerProps {
   onRegenerateRequest: () => void;
 }
 
-const ImageViewer: React.FC<ImageViewerProps> = ({ images, onRegenerateRequest }) => {
+export default function ImageViewer({ images, onRegenerateRequest }: ImageViewerProps) {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [contrastLevel, setContrastLevel] = useState(1);
 
@@ -39,22 +39,27 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ images, onRegenerateRequest }
   console.log('Grouped images:', groupedImages);
 
   return (
-    <div className="image-viewer">
-      <div className="image-grid">
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {Object.entries(groupedImages).map(([view, types]) => (
-          <div key={view} className="image-group">
-            <h3>{view}</h3>
-            <div className="image-row">
+          <div key={view} className="bg-white shadow-md rounded-lg overflow-hidden">
+            <h3 className="text-lg font-semibold bg-gray-100 px-4 py-2 border-b">{view}</h3>
+            <div className="p-4 space-y-4">
               {Object.entries(types).map(([type, url]) => (
-                <div key={type} className="image-item">
-                  <h4>{type}</h4>
+                <div key={type} className="space-y-2">
+                  <h4 className="text-sm font-medium text-gray-600">{type}</h4>
                   <div
-                    className="image-container"
-                    style={{ transform: `scale(${zoomLevel})`, filter: `contrast(${contrastLevel})` }}
+                    className="relative overflow-hidden rounded-md"
+                    style={{ 
+                      transform: `scale(${zoomLevel})`,
+                      transformOrigin: 'top left',
+                    }}
                   >
                     <img 
                       src={url} 
                       alt={`${view} ${type}`} 
+                      className="w-full h-auto"
+                      style={{ filter: `contrast(${contrastLevel})` }}
                       onError={(e) => console.error(`Error loading image: ${url}`, e)}
                       onLoad={() => console.log(`Image loaded successfully: ${url}`)}
                     />
@@ -71,9 +76,14 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ images, onRegenerateRequest }
         contrastLevel={contrastLevel}
         onContrastChange={handleContrastChange}
       />
-      <button className="regenerate-button" onClick={onRegenerateRequest}>画像を再生成</button>
+      <div className="flex justify-center">
+        <button 
+          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          onClick={onRegenerateRequest}
+        >
+          画像を再生成
+        </button>
+      </div>
     </div>
   );
-};
-
-export default ImageViewer;
+}
