@@ -1,18 +1,24 @@
-// src/App.tsx
+'use client'
 
 import React, { useState, useEffect } from 'react';
 import { ClipLoader } from 'react-spinners';
 import FileUpload from './components/FileUpload';
+import ImageViewer from './components/ImageViewer';
 
-const App: React.FC = () => {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+interface ImageData {
+  view: string;
+  type: string;
+  url: string;
+}
+
+export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [dicomShape, setDicomShape] = useState<number[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [midpoints, setMidpoints] = useState<number[]>([]);
+  const [images, setImages] = useState<ImageData[]>([]);
+  const [dicomShape, setDicomShape] = useState<number[]>([]);
 
   useEffect(() => {
-    // 自動ログイン処理
+    // Auto login process
     const loginData = new FormData();
     loginData.append('username', 'admin');
     loginData.append('password', 'password123');
@@ -38,55 +44,55 @@ const App: React.FC = () => {
       });
   }, []);
 
-  const handleUploadSuccess = (imageUrl: string) => {
-    setImageUrl(imageUrl);
+  const handleUploadSuccess = (imageData: ImageData[]) => {
+    console.log('Upload success. Received image data:', imageData);
+    setImages(imageData);
     setIsLoading(false);
-
-    // DICOMデータの形状を取得
-    fetch('http://localhost:5000/get_dicom_shape', { credentials: 'include' })
-      .then(response => response.json())
-      .then(data => {
-        if (data.shape) {
-          setDicomShape(data.shape);
-          // midpointsを初期化
-          const initialMidpoints = data.shape.map((size: number) => Math.floor(size / 2));
-          setMidpoints(initialMidpoints);
-        } else {
-          alert('DICOMデータの形状を取得できませんでした。');
-        }
-      })
-      .catch(error => {
-        console.error('Error fetching DICOM shape:', error);
-        alert('DICOMデータの形状を取得中にエラーが発生しました。');
-      });
+    fetchDicomShape();
   };
 
   const handleUploadStart = () => {
     setIsLoading(true);
   };
 
-  const regenerateImage = () => {
-    setIsLoading(true);
-    const formData = new FormData();
-    formData.append('midpoints', midpoints.join(','));
+  const fetchDicomShape = () => {
+    fetch('http://localhost:5000/get_dicom_shape', {
+      method: 'GET',
+      credentials: 'include',
+    })
+      .then(response => response.json())
+      .then(data => {
+        if (data.shape) {
+          setDicomShape(data.shape);
+        } else {
+          console.error('Failed to get DICOM shape:', data.error);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching DICOM shape:', error);
+      });
+  };
 
+  const handleRegenerateRequest = (midpoints: number[]) => {
+    setIsLoading(true);
     fetch('http://localhost:5000/regenerate', {
       method: 'POST',
       credentials: 'include',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ midpoints }),
     })
       .then(response => {
         if (response.ok) {
-          return response.blob();
+          return response.json();
         } else {
-          return response.json().then(errorData => {
-            throw new Error(errorData.error || 'Unknown error');
-          });
+          throw new Error('Regeneration failed');
         }
       })
-      .then(blob => {
-        const imageUrl = URL.createObjectURL(blob);
-        setImageUrl(imageUrl);
+      .then(data => {
+        console.log('Regenerate success. Received image data:', data.images);
+        setImages(data.images);
         setIsLoading(false);
       })
       .catch(error => {
@@ -96,65 +102,36 @@ const App: React.FC = () => {
       });
   };
 
-  const handleMidpointChange = (axisIndex: number, value: number) => {
-    const newMidpoints = [...midpoints];
-    newMidpoints[axisIndex] = value;
-    setMidpoints(newMidpoints);
-  };
+  useEffect(() => {
+    console.log('Current images state:', images);
+  }, [images]);
 
   return (
-    <div className="app-container">
-      <h1>DICOM+ROIビューアー</h1>
-      {loggedIn ? (
-        isLoading ? (
-          <div className="loading-container">
-            <ClipLoader color="#123abc" loading={isLoading} size={50} />
-            <p>処理中です。しばらくお待ちください...</p>
-          </div>
-        ) : !imageUrl ? (
-          <FileUpload
-            onUploadSuccess={handleUploadSuccess}
-            onUploadStart={handleUploadStart}
-            dicomShape={dicomShape}
-            midpoints={midpoints}
-            onMidpointChange={handleMidpointChange}
-          />
-        ) : (
-          <div>
-            <h2>処理結果</h2>
-            <img
-              src={imageUrl}
-              alt="Visualization"
-              style={{ maxWidth: '100%', height: 'auto' }}
-            />
-            {dicomShape && midpoints.length === 3 && (
-              <div className="midpoint-sliders">
-                {['Sagittal', 'Coronal', 'Axial'].map((axis, index) => (
-                  <div key={axis}>
-                    <label>
-                      {axis} Midpoint: {midpoints[index]}
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max={dicomShape[index] - 1}
-                      value={midpoints[index]}
-                      onChange={(e) => handleMidpointChange(index, parseInt(e.target.value))}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className='regenerate-button'>
-              <button onClick={regenerateImage}>画像を再生成</button>
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8 text-center">
+          DICOM+ROIビューアー
+        </h1>
+
+        {loggedIn ? (
+          isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <ClipLoader color="#4A90E2" size={50} />
+              <p className="ml-4 text-xl">処理中です。しばらくお待ちください...</p>
             </div>
-          </div>
-        )
-      ) : (
-        <p>ログインしています...</p>
-      )}
+          ) : images.length === 0 ? (
+            <FileUpload onUploadSuccess={handleUploadSuccess} onUploadStart={handleUploadStart} />
+          ) : (
+            <ImageViewer 
+              images={images} 
+              onRegenerateRequest={handleRegenerateRequest}
+              dicomShape={dicomShape}
+            />
+          )
+        ) : (
+          <p className="text-center text-xl">ログインしています...</p>
+        )}
+      </div>
     </div>
   );
-};
-
-export default App;
+}

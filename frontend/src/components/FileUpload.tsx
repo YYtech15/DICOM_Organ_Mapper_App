@@ -1,21 +1,19 @@
-// src/components/FileUpload.tsx
-
 import React, { useState } from 'react';
 
+interface ImageData {
+  view: string;
+  type: string;
+  url: string;
+}
+
 interface FileUploadProps {
-  onUploadSuccess: (imageUrl: string) => void;
+  onUploadSuccess: (imageData: ImageData[]) => void;
   onUploadStart: () => void;
-  dicomShape: number[] | null;
-  midpoints: number[];
-  onMidpointChange: (axisIndex: number, value: number) => void;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onUploadSuccess,
   onUploadStart,
-  dicomShape,
-  midpoints,
-  onMidpointChange,
 }) => {
   const [dicomFiles, setDicomFiles] = useState<FileList | null>(null);
   const [niftiFiles, setNiftiFiles] = useState<FileList | null>(null);
@@ -54,9 +52,6 @@ const FileUpload: React.FC<FileUploadProps> = ({
       }
     }
 
-    // midpointsをフォームデータに追加
-    formData.append('midpoints', midpoints.join(','));
-
     fetch('http://localhost:5000/upload', {
       method: 'POST',
       credentials: 'include',
@@ -64,16 +59,13 @@ const FileUpload: React.FC<FileUploadProps> = ({
     })
       .then(response => {
         if (response.ok) {
-          return response.blob();
+          return response.json();
         } else {
-          return response.json().then(errorData => {
-            throw new Error(errorData.error || 'Unknown error');
-          });
+          throw new Error('Upload failed');
         }
       })
-      .then(blob => {
-        const imageUrl = URL.createObjectURL(blob);
-        onUploadSuccess(imageUrl);
+      .then(data => {
+        onUploadSuccess(data.images);
       })
       .catch(error => {
         console.error('Upload error:', error);
@@ -82,48 +74,49 @@ const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   return (
-    <div className="file-upload-container">
+    <div className="space-y-6">
       <div>
-        <label>DICOMフォルダを選択（複数選択可能）:</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          DICOMフォルダを選択（複数選択可能）:
+        </label>
         <input
           type="file"
           multiple
           onChange={handleDicomFilesChange}
           webkitdirectory=""
           mozdirectory=""
+          className="mt-1 block w-full text-sm text-gray-500
+            file:mr-4 file:py-2 file:px-4
+            file:rounded-full file:border-0
+            file:text-sm file:font-semibold
+            file:bg-violet-50 file:text-violet-700
+            hover:file:bg-violet-100"
         />
       </div>
       <div>
-        <label>ROIフォルダを選択（ROIフォルダ内にNIFTIファイルがあること）:</label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          ROIフォルダを選択（ROIフォルダ内にNIFTIファイルがあること）:
+        </label>
         <input
           type="file"
           multiple
           onChange={handleNiftiFilesChange}
           webkitdirectory=""
           mozdirectory=""
+          className="mt-1 block w-full text-sm text-gray-500
+            file:mr-4 file:py-2 file:px-4
+            file:rounded-full file:border-0
+            file:text-sm file:font-semibold
+            file:bg-violet-50 file:text-violet-700
+            hover:file:bg-violet-100"
         />
       </div>
-
-      {dicomShape && midpoints.length === 3 && (
-        <div className="midpoint-sliders">
-          {['Sagittal', 'Coronal', 'Axial'].map((axis, index) => (
-            <div key={axis}>
-              <label>
-                {axis} Midpoint: {midpoints[index]}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max={dicomShape[index] - 1}
-                value={midpoints[index]}
-                onChange={(e) => onMidpointChange(index, parseInt(e.target.value))}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-
-      <button onClick={handleUpload}>アップロード</button>
+      <button 
+        onClick={handleUpload}
+        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      >
+        アップロード
+      </button>
     </div>
   );
 };

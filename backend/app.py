@@ -2,7 +2,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import os
-from flask import Flask, request, jsonify, send_file, session, redirect, url_for
+from flask import Flask, request, jsonify, send_file, send_from_directory, session, redirect, url_for
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -10,11 +10,11 @@ from src.utils.dicom import load_dicom
 from src.utils.nifti import load_nifti
 from src.utils.rotate import apply_rotation
 from src.utils.save import save_visualization
-from src.utils.path import get_relative_path
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 import uuid
+import time
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -31,6 +31,9 @@ USERS = {
 
 # セッションデータを保存するための辞書
 SESSION_DATA = {}
+
+TransposeOrder = (1, 2, 0)
+RotationAngles = (180, 0, 90)
 
 def allowed_file(filename):
     """許可されたファイル拡張子かどうかをチェック"""
@@ -106,8 +109,6 @@ def upload_files():
                 nifti_info = {
                     'path': file_path,
                     'value': idx + 2,  # 値は2から始まる（1は背景として予約）
-                    'transpose_order': (2, 0, 1),
-                    'rotation_angles': (90, 0, 180)
                 }
                 nifti_info_list.append(nifti_info)
             else:
@@ -124,20 +125,46 @@ def upload_files():
         midpoints = None  # midpointsが提供されない場合はNone
 
     # 処理と可視化
-    output_file = os.path.join(user_upload_dir, 'output_visualization.png')
+    output_dir = os.path.join(user_upload_dir, 'output_images')
+    os.makedirs(output_dir, exist_ok=True)
+
     try:
-        new_3d_array = create_3d_array(dicom_dir, nifti_info_list)
+        new_3d_array, dicom_array = create_3d_array(dicom_dir, nifti_info_list)
         SESSION_DATA[user_id]['new_3d_array'] = new_3d_array
-        SESSION_DATA[user_id]['dicom_data'] = load_dicom(dicom_dir)
-        
-        visualize_3d_array(new_3d_array, SESSION_DATA[user_id]['dicom_data'], output_file, midpoints)
-        return send_file(output_file, mimetype='image/png')
+        SESSION_DATA[user_id]['dicom_data'] = dicom_array
+
+        image_files = visualize_3d_array(new_3d_array, SESSION_DATA[user_id]['dicom_data'], output_dir, midpoints)
+
+        image_urls = []
+        for img in image_files:
+            filename = os.path.relpath(img['file'], user_upload_dir)
+            filename = filename.replace('\\', '/')
+            image_url = url_for('get_image', filename=filename, _external=True)
+            image_urls.append({
+                'view': img['view'],
+                'type': img['type'],
+                'url': image_url
+            })
+
+        return jsonify({'images': image_urls})
+
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
+
+@app.route('/get_image/<path:filename>')
+@login_required
+def get_image(filename):
+    user_id = session['user_id']
+    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], user_id)
+    filename = filename.replace('\\', '/')  
+    directory = os.path.dirname(filename)
+    file = os.path.basename(filename)
+    return send_from_directory(os.path.join(user_upload_dir, directory), file)
 
 @app.route('/get_dicom_shape', methods=['GET'])
 @login_required
@@ -157,22 +184,22 @@ def create_custom_cmap(colors):
 def create_3d_array(dicom_path, nifti_data):
     """DICOMと複数のNIFTIデータから新たな3次元配列を作成"""
     dicom_data = load_dicom(dicom_path)
-    new_3d_array = dicom_data.copy()
+    rotation_data = np.transpose(dicom_data, TransposeOrder)
+    dicom_array = apply_rotation(rotation_data, RotationAngles)
+    new_3d_array = dicom_array.copy()
 
     for nifti_info in nifti_data:
-        data = load_nifti(nifti_info['path'], nifti_info['value'])
-        rotation_data = np.transpose(data, nifti_info['transpose_order'])
-        nifti_array = apply_rotation(rotation_data, nifti_info['rotation_angles'])
+        nifti_array = load_nifti(nifti_info['path'], nifti_info['value'])
 
-        if dicom_data.shape != nifti_array.shape:
+        if dicom_array.shape != nifti_array.shape:
             raise ValueError(f"DICOM and NIFTI data sizes do not match for {nifti_info['path']}")
 
         new_3d_array = np.where(nifti_array != 0, nifti_info['value'], new_3d_array)
 
-    return new_3d_array
+    return new_3d_array, dicom_array
 
-def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
-    """3次元配列を可視化"""
+def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
+    """3次元配列を可視化し、各断面ごとに画像を保存"""
     if midpoints is None:
         midpoints = [s // 2 for s in new_3d_array.shape]
     else:
@@ -185,10 +212,9 @@ def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
     colors = ['black', 'gray'] + ['red', 'green', 'blue', 'yellow', 'cyan', 'magenta'][:len(set(new_3d_array.flatten())) - 2]
     custom_cmap = create_custom_cmap(colors)
 
-    fig, axes = plt.subplots(3, 3, figsize=(15, 15))
-    
     views = ['Sagittal', 'Coronal', 'Axial']
-    
+    image_files = []
+
     for i, (view, midpoint) in enumerate(zip(views, midpoints)):
         if view == 'Sagittal':
             dicom_slice = dicom_data[midpoint, :, :]
@@ -200,24 +226,48 @@ def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
             dicom_slice = dicom_data[:, :, midpoint]
             new_slice = new_3d_array[:, :, midpoint]
 
-        axes[i, 0].imshow(dicom_slice, cmap='gray')
-        axes[i, 0].set_title(f'{view} - DICOM (Slice {midpoint})')
-        axes[i, 0].axis('off')
-
-        im = axes[i, 1].imshow(new_slice, cmap=custom_cmap)
-        axes[i, 1].set_title(f'{view} - Fused (Slice {midpoint})')
-        axes[i, 1].axis('off')
-
         diff_slice = new_slice - dicom_slice
-        axes[i, 2].imshow(diff_slice, cmap='hot')
-        axes[i, 2].set_title(f'{view} - Difference')
-        axes[i, 2].axis('off')
 
-        plt.colorbar(im, ax=axes[i, 1], label='Intensity')
+        # DICOM Slice
+        fig, ax = plt.subplots()
+        ax.imshow(dicom_slice, cmap='gray')
+        ax.set_title(f'{view} - DICOM (Slice {midpoint})')
+        ax.axis('off')
+        dicom_file = os.path.join(output_dir, f'{view}_DICOM.png')
+        save_visualization(fig, dicom_file)
+        plt.close(fig)
+        image_files.append({'view': view, 'type': 'DICOM', 'file': dicom_file})
 
-    plt.tight_layout()
-    save_visualization(fig, output_file)
-    plt.close(fig)
+        # Fused Image
+        fig, ax = plt.subplots()
+        im = ax.imshow(new_slice, cmap=custom_cmap)
+        ax.set_title(f'{view} - Fused (Slice {midpoint})')
+        ax.axis('off')
+
+        # カラーバーを左側に配置
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("left", size="5%", pad=0.05)
+        cbar = plt.colorbar(im, cax=cax)
+        cax.yaxis.set_ticks_position('left')
+        cax.yaxis.set_label_position('left')
+
+        fused_file = os.path.join(output_dir, f'{view}_Fused.png')
+        save_visualization(fig, fused_file)
+        plt.close(fig)
+        image_files.append({'view': view, 'type': 'Fused', 'file': fused_file})
+
+        # Difference Image
+        fig, ax = plt.subplots()
+        ax.imshow(diff_slice, cmap='hot')
+        ax.set_title(f'{view} - Difference')
+        ax.axis('off')
+        diff_file = os.path.join(output_dir, f'{view}_Difference.png')
+        save_visualization(fig, diff_file)
+        plt.close(fig)
+        image_files.append({'view': view, 'type': 'Difference', 'file': diff_file})
+
+    return image_files
 
 @app.route('/regenerate', methods=['POST'])
 @login_required
@@ -225,23 +275,37 @@ def regenerate_image():
     """画像の再生成"""
     user_id = session['user_id']
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], user_id)
-    output_file = os.path.join(user_upload_dir, 'output_visualization.png')
+    output_dir = os.path.join(user_upload_dir, 'output_images')
+    os.makedirs(output_dir, exist_ok=True)
 
     if 'new_3d_array' not in SESSION_DATA[user_id] or 'dicom_data' not in SESSION_DATA[user_id]:
         return jsonify({'error': 'No processed data found'}), 400
 
-    midpoints_str = request.form.get('midpoints', None)
-    if midpoints_str:
-        try:
-            midpoints = [int(x) for x in midpoints_str.split(',')]
-        except ValueError:
-            return jsonify({'error': 'Invalid midpoints format'}), 400
-    else:
-        return jsonify({'error': 'Midpoints are required'}), 400
+    # JSONデータから midpoints を取得
+    data = request.get_json()
+    midpoints = data.get('midpoints')
+
+    if not midpoints or not isinstance(midpoints, list) or len(midpoints) != 3:
+        return jsonify({'error': 'Invalid midpoints format'}), 400
 
     try:
-        visualize_3d_array(SESSION_DATA[user_id]['new_3d_array'], SESSION_DATA[user_id]['dicom_data'], output_file, midpoints)
-        return send_file(output_file, mimetype='image/png')
+        # 現在のタイムスタンプを取得
+        timestamp = int(time.time())
+        image_files = visualize_3d_array(SESSION_DATA[user_id]['new_3d_array'], SESSION_DATA[user_id]['dicom_data'], output_dir, midpoints)
+
+        image_urls = []
+        for img in image_files:
+            filename = os.path.relpath(img['file'], user_upload_dir)
+            filename = filename.replace('\\', '/')
+            # URLにタイムスタンプを追加
+            image_url = url_for('get_image', filename=filename, _external=True, t=timestamp)
+            image_urls.append({
+                'view': img['view'],
+                'type': img['type'],
+                'url': image_url
+            })
+        return jsonify({'images': image_urls})
+
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:

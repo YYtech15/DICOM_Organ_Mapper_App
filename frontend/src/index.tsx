@@ -4,6 +4,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';  // 変更点：'react-dom/client'からインポート
 import App from './App';
 import './styles/App.css';
+import './styles/index.css';
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
