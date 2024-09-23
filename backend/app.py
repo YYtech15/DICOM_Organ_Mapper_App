@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 import uuid
+import time
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -280,29 +281,29 @@ def regenerate_image():
     if 'new_3d_array' not in SESSION_DATA[user_id] or 'dicom_data' not in SESSION_DATA[user_id]:
         return jsonify({'error': 'No processed data found'}), 400
 
-    midpoints_str = request.form.get('midpoints', None)
-    if midpoints_str:
-        try:
-            midpoints = [int(x) for x in midpoints_str.split(',')]
-        except ValueError:
-            return jsonify({'error': 'Invalid midpoints format'}), 400
-    else:
-        return jsonify({'error': 'Midpoints are required'}), 400
+    # JSONデータから midpoints を取得
+    data = request.get_json()
+    midpoints = data.get('midpoints')
+
+    if not midpoints or not isinstance(midpoints, list) or len(midpoints) != 3:
+        return jsonify({'error': 'Invalid midpoints format'}), 400
 
     try:
+        # 現在のタイムスタンプを取得
+        timestamp = int(time.time())
         image_files = visualize_3d_array(SESSION_DATA[user_id]['new_3d_array'], SESSION_DATA[user_id]['dicom_data'], output_dir, midpoints)
 
         image_urls = []
         for img in image_files:
             filename = os.path.relpath(img['file'], user_upload_dir)
             filename = filename.replace('\\', '/')
-            image_url = url_for('get_image', filename=filename, _external=True)
+            # URLにタイムスタンプを追加
+            image_url = url_for('get_image', filename=filename, _external=True, t=timestamp)
             image_urls.append({
                 'view': img['view'],
                 'type': img['type'],
                 'url': image_url
             })
-
         return jsonify({'images': image_urls})
 
     except ValueError as ve:

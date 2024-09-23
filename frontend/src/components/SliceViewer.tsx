@@ -10,7 +10,6 @@ export default function SliceViewer({ axis, maxIndex }: SliceViewerProps) {
   const [sliceIndex, setSliceIndex] = useState(Math.floor(maxIndex / 2));
   const [imageSrc, setImageSrc] = useState('');
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [contrastLevel, setContrastLevel] = useState(1);
 
   useEffect(() => {
     fetch(`/get_slice?axis=${axis}&index=${sliceIndex}`, { credentials: 'include' })
@@ -31,10 +30,6 @@ export default function SliceViewer({ axis, maxIndex }: SliceViewerProps) {
     setZoomLevel(value);
   };
 
-  const handleContrastChange = (value: number) => {
-    setContrastLevel(value);
-  };
-
   return (
     <div className="bg-white shadow-md rounded-lg overflow-hidden h-full flex flex-col">
       <h2 className="text-lg font-semibold bg-gray-100 px-4 py-2 border-b">{axis} View</h2>
@@ -51,7 +46,6 @@ export default function SliceViewer({ axis, maxIndex }: SliceViewerProps) {
               src={imageSrc} 
               alt={`${axis} slice`} 
               className="max-w-full max-h-full object-contain"
-              style={{ filter: `contrast(${contrastLevel})` }}
             />
           </div>
         </div>
@@ -72,8 +66,6 @@ export default function SliceViewer({ axis, maxIndex }: SliceViewerProps) {
         <Controls
           zoomLevel={zoomLevel}
           onZoomChange={handleZoomChange}
-          contrastLevel={contrastLevel}
-          onContrastChange={handleContrastChange}
         />
       </div>
     </div>

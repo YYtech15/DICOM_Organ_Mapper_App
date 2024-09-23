@@ -9,23 +9,30 @@ interface ImageData {
 
 interface ImageViewerProps {
   images: ImageData[];
-  onRegenerateRequest: () => void;
+  onRegenerateRequest: (midpoints: number[]) => void;
+  dicomShape: number[];
 }
 
-export default function ImageViewer({ images, onRegenerateRequest }: ImageViewerProps) {
+export default function ImageViewer({ images, onRegenerateRequest, dicomShape }: ImageViewerProps) {
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [contrastLevel, setContrastLevel] = useState(1);
+  const [midpoints, setMidpoints] = useState<number[]>([]);
 
   useEffect(() => {
     console.log('ImageViewer received images:', images);
-  }, [images]);
+    // Initialize midpoints with default values (half of each dimension)
+    if (dicomShape.length === 3) {
+      setMidpoints(dicomShape.map(dim => Math.floor(dim / 2)));
+    }
+  }, [images, dicomShape]);
 
   const handleZoomChange = (value: number) => {
     setZoomLevel(value);
   };
 
-  const handleContrastChange = (value: number) => {
-    setContrastLevel(value);
+  const handleMidpointChange = (index: number, value: number) => {
+    const newMidpoints = [...midpoints];
+    newMidpoints[index] = value;
+    setMidpoints(newMidpoints);
   };
 
   const groupedImages = images.reduce((acc, img) => {
@@ -59,7 +66,6 @@ export default function ImageViewer({ images, onRegenerateRequest }: ImageViewer
                       src={url} 
                       alt={`${view} ${type}`} 
                       className="w-full h-auto"
-                      style={{ filter: `contrast(${contrastLevel})` }}
                       onError={(e) => console.error(`Error loading image: ${url}`, e)}
                       onLoad={() => console.log(`Image loaded successfully: ${url}`)}
                     />
@@ -73,16 +79,33 @@ export default function ImageViewer({ images, onRegenerateRequest }: ImageViewer
       <Controls
         zoomLevel={zoomLevel}
         onZoomChange={handleZoomChange}
-        contrastLevel={contrastLevel}
-        onContrastChange={handleContrastChange}
       />
-      <div className="flex justify-center">
-        <button 
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          onClick={onRegenerateRequest}
-        >
-          画像を再生成
-        </button>
+      <div className="space-y-4">
+        <div className="flex flex-col space-y-2">
+          {['Sagittal', 'Coronal', 'Axial'].map((view, index) => (
+            <div key={view} className="flex items-center space-x-2">
+              <label htmlFor={`midpoint-${view}`} className="w-20">{view}:</label>
+              <input
+                id={`midpoint-${view}`}
+                type="range"
+                min="0"
+                max={dicomShape[index] - 1}
+                value={midpoints[index]}
+                onChange={(e) => handleMidpointChange(index, parseInt(e.target.value))}
+                className="w-full"
+              />
+              <span className="w-12 text-right">{midpoints[index]}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex justify-center">
+          <button 
+            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            onClick={() => onRegenerateRequest(midpoints)}
+          >
+            画像を再生成
+          </button>
+        </div>
       </div>
     </div>
   );

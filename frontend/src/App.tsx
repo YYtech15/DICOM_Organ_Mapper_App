@@ -15,6 +15,7 @@ export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState<ImageData[]>([]);
+  const [dicomShape, setDicomShape] = useState<number[]>([]);
 
   useEffect(() => {
     // Auto login process
@@ -47,17 +48,40 @@ export default function App() {
     console.log('Upload success. Received image data:', imageData);
     setImages(imageData);
     setIsLoading(false);
+    fetchDicomShape();
   };
 
   const handleUploadStart = () => {
     setIsLoading(true);
   };
 
-  const handleRegenerateRequest = () => {
+  const fetchDicomShape = () => {
+    fetch('http://localhost:5000/get_dicom_shape', {
+      method: 'GET',
+      credentials: 'include',
+    })
+      .then(response => response.json())
+      .then(data => {
+        if (data.shape) {
+          setDicomShape(data.shape);
+        } else {
+          console.error('Failed to get DICOM shape:', data.error);
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching DICOM shape:', error);
+      });
+  };
+
+  const handleRegenerateRequest = (midpoints: number[]) => {
     setIsLoading(true);
     fetch('http://localhost:5000/regenerate', {
       method: 'POST',
       credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ midpoints }),
     })
       .then(response => {
         if (response.ok) {
@@ -83,32 +107,30 @@ export default function App() {
   }, [images]);
 
   return (
-    <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-      <div className="relative py-3 sm:max-w-xl sm:mx-auto">
-        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 to-light-blue-500 shadow-lg transform -skew-y-6 sm:skew-y-0 sm:-rotate-6 sm:rounded-3xl"></div>
-        <div className="relative px-4 py-10 bg-white shadow-lg sm:rounded-3xl sm:p-20">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">DICOM+ROIビューアー</h1>
-          {loggedIn ? (
-            isLoading ? (
-              <div className="flex flex-col items-center justify-center">
-                <ClipLoader color="#4F46E5" loading={isLoading} size={50} />
-                <p className="mt-4 text-gray-600">処理中です。しばらくお待ちください...</p>
-              </div>
-            ) : images.length === 0 ? (
-              <FileUpload
-                onUploadSuccess={handleUploadSuccess}
-                onUploadStart={handleUploadStart}
-              />
-            ) : (
-              <ImageViewer 
-                images={images} 
-                onRegenerateRequest={handleRegenerateRequest}
-              />
-            )
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8 text-center">
+          DICOM+ROIビューアー
+        </h1>
+
+        {loggedIn ? (
+          isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <ClipLoader color="#4A90E2" size={50} />
+              <p className="ml-4 text-xl">処理中です。しばらくお待ちください...</p>
+            </div>
+          ) : images.length === 0 ? (
+            <FileUpload onUploadSuccess={handleUploadSuccess} onUploadStart={handleUploadStart} />
           ) : (
-            <p className="text-center text-gray-600">ログインしています...</p>
-          )}
-        </div>
+            <ImageViewer 
+              images={images} 
+              onRegenerateRequest={handleRegenerateRequest}
+              dicomShape={dicomShape}
+            />
+          )
+        ) : (
+          <p className="text-center text-xl">ログインしています...</p>
+        )}
       </div>
     </div>
   );
