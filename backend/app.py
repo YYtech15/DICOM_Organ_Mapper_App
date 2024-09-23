@@ -2,7 +2,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import os
-from flask import Flask, request, jsonify, send_file, session, redirect, url_for
+from flask import Flask, request, jsonify, send_file, send_from_directory, session, redirect, url_for
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -124,20 +124,46 @@ def upload_files():
         midpoints = None  # midpointsが提供されない場合はNone
 
     # 処理と可視化
-    output_file = os.path.join(user_upload_dir, 'output_visualization.png')
+    output_dir = os.path.join(user_upload_dir, 'output_images')
+    os.makedirs(output_dir, exist_ok=True)
+
     try:
         new_3d_array, dicom_array = create_3d_array(dicom_dir, nifti_info_list)
         SESSION_DATA[user_id]['new_3d_array'] = new_3d_array
         SESSION_DATA[user_id]['dicom_data'] = dicom_array
-        
-        visualize_3d_array(new_3d_array, SESSION_DATA[user_id]['dicom_data'], output_file, midpoints)
-        return send_file(output_file, mimetype='image/png')
+
+        image_files = visualize_3d_array(new_3d_array, SESSION_DATA[user_id]['dicom_data'], output_dir, midpoints)
+
+        image_urls = []
+        for img in image_files:
+            filename = os.path.relpath(img['file'], user_upload_dir)
+            filename = filename.replace('\\', '/')
+            image_url = url_for('get_image', filename=filename, _external=True)
+            image_urls.append({
+                'view': img['view'],
+                'type': img['type'],
+                'url': image_url
+            })
+
+        return jsonify({'images': image_urls})
+
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
+
+@app.route('/get_image/<path:filename>')
+@login_required
+def get_image(filename):
+    user_id = session['user_id']
+    user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], user_id)
+    filename = filename.replace('\\', '/')  
+    directory = os.path.dirname(filename)
+    file = os.path.basename(filename)
+    return send_from_directory(os.path.join(user_upload_dir, directory), file)
 
 @app.route('/get_dicom_shape', methods=['GET'])
 @login_required
@@ -171,8 +197,8 @@ def create_3d_array(dicom_path, nifti_data):
 
     return new_3d_array, dicom_array
 
-def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
-    """3次元配列を可視化"""
+def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
+    """3次元配列を可視化し、各断面ごとに画像を保存"""
     if midpoints is None:
         midpoints = [s // 2 for s in new_3d_array.shape]
     else:
@@ -185,10 +211,9 @@ def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
     colors = ['black', 'gray'] + ['red', 'green', 'blue', 'yellow', 'cyan', 'magenta'][:len(set(new_3d_array.flatten())) - 2]
     custom_cmap = create_custom_cmap(colors)
 
-    fig, axes = plt.subplots(3, 3, figsize=(15, 15))
-    
     views = ['Sagittal', 'Coronal', 'Axial']
-    
+    image_files = []
+
     for i, (view, midpoint) in enumerate(zip(views, midpoints)):
         if view == 'Sagittal':
             dicom_slice = dicom_data[midpoint, :, :]
@@ -200,24 +225,48 @@ def visualize_3d_array(new_3d_array, dicom_data, output_file, midpoints=None):
             dicom_slice = dicom_data[:, :, midpoint]
             new_slice = new_3d_array[:, :, midpoint]
 
-        axes[i, 0].imshow(dicom_slice, cmap='gray')
-        axes[i, 0].set_title(f'{view} - DICOM (Slice {midpoint})')
-        axes[i, 0].axis('off')
-
-        im = axes[i, 1].imshow(new_slice, cmap=custom_cmap)
-        axes[i, 1].set_title(f'{view} - Fused (Slice {midpoint})')
-        axes[i, 1].axis('off')
-
         diff_slice = new_slice - dicom_slice
-        axes[i, 2].imshow(diff_slice, cmap='hot')
-        axes[i, 2].set_title(f'{view} - Difference')
-        axes[i, 2].axis('off')
 
-        plt.colorbar(im, ax=axes[i, 1], label='Intensity')
+        # DICOM Slice
+        fig, ax = plt.subplots()
+        ax.imshow(dicom_slice, cmap='gray')
+        ax.set_title(f'{view} - DICOM (Slice {midpoint})')
+        ax.axis('off')
+        dicom_file = os.path.join(output_dir, f'{view}_DICOM.png')
+        save_visualization(fig, dicom_file)
+        plt.close(fig)
+        image_files.append({'view': view, 'type': 'DICOM', 'file': dicom_file})
 
-    plt.tight_layout()
-    save_visualization(fig, output_file)
-    plt.close(fig)
+        # Fused Image
+        fig, ax = plt.subplots()
+        im = ax.imshow(new_slice, cmap=custom_cmap)
+        ax.set_title(f'{view} - Fused (Slice {midpoint})')
+        ax.axis('off')
+
+        # カラーバーを左側に配置
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("left", size="5%", pad=0.05)
+        cbar = plt.colorbar(im, cax=cax)
+        cax.yaxis.set_ticks_position('left')
+        cax.yaxis.set_label_position('left')
+
+        fused_file = os.path.join(output_dir, f'{view}_Fused.png')
+        save_visualization(fig, fused_file)
+        plt.close(fig)
+        image_files.append({'view': view, 'type': 'Fused', 'file': fused_file})
+
+        # Difference Image
+        fig, ax = plt.subplots()
+        ax.imshow(diff_slice, cmap='hot')
+        ax.set_title(f'{view} - Difference')
+        ax.axis('off')
+        diff_file = os.path.join(output_dir, f'{view}_Difference.png')
+        save_visualization(fig, diff_file)
+        plt.close(fig)
+        image_files.append({'view': view, 'type': 'Difference', 'file': diff_file})
+
+    return image_files
 
 @app.route('/regenerate', methods=['POST'])
 @login_required
@@ -225,7 +274,8 @@ def regenerate_image():
     """画像の再生成"""
     user_id = session['user_id']
     user_upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], user_id)
-    output_file = os.path.join(user_upload_dir, 'output_visualization.png')
+    output_dir = os.path.join(user_upload_dir, 'output_images')
+    os.makedirs(output_dir, exist_ok=True)
 
     if 'new_3d_array' not in SESSION_DATA[user_id] or 'dicom_data' not in SESSION_DATA[user_id]:
         return jsonify({'error': 'No processed data found'}), 400
@@ -240,8 +290,21 @@ def regenerate_image():
         return jsonify({'error': 'Midpoints are required'}), 400
 
     try:
-        visualize_3d_array(SESSION_DATA[user_id]['new_3d_array'], SESSION_DATA[user_id]['dicom_data'], output_file, midpoints)
-        return send_file(output_file, mimetype='image/png')
+        image_files = visualize_3d_array(SESSION_DATA[user_id]['new_3d_array'], SESSION_DATA[user_id]['dicom_data'], output_dir, midpoints)
+
+        image_urls = []
+        for img in image_files:
+            filename = os.path.relpath(img['file'], user_upload_dir)
+            filename = filename.replace('\\', '/')
+            image_url = url_for('get_image', filename=filename, _external=True)
+            image_urls.append({
+                'view': img['view'],
+                'type': img['type'],
+                'url': image_url
+            })
+
+        return jsonify({'images': image_urls})
+
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:

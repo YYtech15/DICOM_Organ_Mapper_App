@@ -1,21 +1,19 @@
-// src/components/FileUpload.tsx
-
 import React, { useState } from 'react';
 
+interface ImageData {
+  view: string;
+  type: string;
+  url: string;
+}
+
 interface FileUploadProps {
-  onUploadSuccess: (imageUrl: string) => void;
+  onUploadSuccess: (imageData: ImageData[]) => void;
   onUploadStart: () => void;
-  dicomShape: number[] | null;
-  midpoints: number[];
-  onMidpointChange: (axisIndex: number, value: number) => void;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({
   onUploadSuccess,
   onUploadStart,
-  dicomShape,
-  midpoints,
-  onMidpointChange,
 }) => {
   const [dicomFiles, setDicomFiles] = useState<FileList | null>(null);
   const [niftiFiles, setNiftiFiles] = useState<FileList | null>(null);
@@ -54,9 +52,6 @@ const FileUpload: React.FC<FileUploadProps> = ({
       }
     }
 
-    // midpointsをフォームデータに追加
-    formData.append('midpoints', midpoints.join(','));
-
     fetch('http://localhost:5000/upload', {
       method: 'POST',
       credentials: 'include',
@@ -64,16 +59,13 @@ const FileUpload: React.FC<FileUploadProps> = ({
     })
       .then(response => {
         if (response.ok) {
-          return response.blob();
+          return response.json();
         } else {
-          return response.json().then(errorData => {
-            throw new Error(errorData.error || 'Unknown error');
-          });
+          throw new Error('Upload failed');
         }
       })
-      .then(blob => {
-        const imageUrl = URL.createObjectURL(blob);
-        onUploadSuccess(imageUrl);
+      .then(data => {
+        onUploadSuccess(data.images);
       })
       .catch(error => {
         console.error('Upload error:', error);
@@ -103,26 +95,6 @@ const FileUpload: React.FC<FileUploadProps> = ({
           mozdirectory=""
         />
       </div>
-
-      {dicomShape && midpoints.length === 3 && (
-        <div className="midpoint-sliders">
-          {['Sagittal', 'Coronal', 'Axial'].map((axis, index) => (
-            <div key={axis}>
-              <label>
-                {axis} Midpoint: {midpoints[index]}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max={dicomShape[index] - 1}
-                value={midpoints[index]}
-                onChange={(e) => onMidpointChange(index, parseInt(e.target.value))}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-
       <button onClick={handleUpload}>アップロード</button>
     </div>
   );
