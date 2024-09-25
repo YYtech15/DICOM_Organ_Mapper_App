@@ -1,8 +1,9 @@
+import io
 import matplotlib
 matplotlib.use('Agg')
 
 import os
-from flask import Flask, request, jsonify, send_file, send_from_directory, session, redirect, url_for
+from flask import Flask, current_app, request, jsonify, send_file, send_from_directory, session, redirect, url_for, make_response
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from functools import wraps
@@ -17,9 +18,11 @@ import uuid
 import time
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
 app.secret_key = 'your_secret_key'
 app.config['UPLOAD_FOLDER'] = './uploads'
+
+# CORSの設定
+CORS(app, supports_credentials=True)
 
 # アップロード可能な拡張子
 ALLOWED_EXTENSIONS = {'dcm', 'nii', 'nii.gz'}
@@ -65,7 +68,8 @@ def login():
 @app.route('/logout')
 def logout():
     """ログアウト処理"""
-    user_id = session.pop('logged_in', None)
+    user_id = session.pop('user_id', None)
+    session.pop('logged_in', None)
     if user_id in SESSION_DATA:
         del SESSION_DATA[user_id]  # セッションデータの削除
     return redirect(url_for('index'))
@@ -154,7 +158,6 @@ def upload_files():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
 
 @app.route('/get_image/<path:filename>')
 @login_required
@@ -312,6 +315,44 @@ def regenerate_image():
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
+
+@app.route('/download_array', methods=['GET'])
+@login_required
+def download_array():
+    """3D配列データをプレーンテキストファイルとしてダウンロード"""
+    user_id = session.get('user_id')
+    if not user_id:
+        current_app.logger.warning(f"Attempted access without user_id in session")
+        return jsonify({'error': 'User not authenticated', 'details': 'No user_id found in session'}), 401
+
+    if 'new_3d_array' not in SESSION_DATA.get(user_id, {}):
+        current_app.logger.warning(f"No processed data found for user_id: {user_id}")
+        return jsonify({'error': 'No processed data found', 'details': 'new_3d_array not found in session data'}), 400
+
+    array_data = SESSION_DATA[user_id]['new_3d_array']
+    
+    # 配列を整数型に変換
+    array_data_int = array_data.astype(int)
+    
+    # メモリ上のテキストストリームを作成
+    buffer = io.StringIO()
+
+    # 配列をスライスごとにバッファに書き込む
+    for i in range(array_data_int.shape[2]):
+        buffer.write(f"Slice {i}:\n")
+        np.savetxt(buffer, array_data_int[:, :, i], fmt='%d')
+        buffer.write("\n")
+
+    # バッファの内容を取得
+    buffer.seek(0)
+    data = buffer.getvalue()
+
+    # レスポンスを作成
+    response = make_response(data)
+    response.headers['Content-Disposition'] = 'attachment; filename=3d_array.txt'
+    response.headers['Content-Type'] = 'text/plain'
+
+    return response
 
 if __name__ == '__main__':
     app.run(debug=True)

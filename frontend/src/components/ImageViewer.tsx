@@ -21,6 +21,8 @@ interface ImageState {
 export default function ImageViewer({ images, onRegenerateRequest, dicomShape }: ImageViewerProps) {
   const [midpoints, setMidpoints] = useState<number[]>([]);
   const [imageStates, setImageStates] = useState<Record<string, ImageState>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const containerRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isDragging = useRef<Record<string, boolean>>({});
   const lastPosition = useRef<Record<string, { x: number; y: number }>>({});
@@ -132,6 +134,43 @@ export default function ImageViewer({ images, onRegenerateRequest, dicomShape }:
     return acc;
   }, {} as Record<string, Record<string, string>>);
 
+  const handleDownload = async () => {
+    try {
+      setIsLoading(true);
+      setDownloadError(null);
+      
+      const response = await fetch('http://localhost:5000/download_array', {
+        method: 'GET',
+        credentials: 'include',
+      });
+  
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Download failed');
+      }
+  
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.indexOf('text/plain') === -1) {
+        throw new Error('Received incorrect file type');
+      }
+  
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = '3d_array.txt'; // Adjusted to match backend filename
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      setDownloadError(error instanceof Error ? error.message : 'An unknown error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {Object.entries(groupedImages).map(([view, types]) => (
@@ -148,7 +187,7 @@ export default function ImageViewer({ images, onRegenerateRequest, dicomShape }:
                     <div
                       ref={el => containerRefs.current[key] = el}
                       className="relative overflow-hidden rounded-md"
-                      style={{ 
+                      style={{
                         height: '400px',
                         width: '100%',
                         cursor: zoomLevel > 1 ? 'move' : 'default'
@@ -164,9 +203,9 @@ export default function ImageViewer({ images, onRegenerateRequest, dicomShape }:
                           transition: 'transform 0.1s ease-out'
                         }}
                       >
-                        <img 
-                          src={url} 
-                          alt={`${view} ${type}`} 
+                        <img
+                          src={url}
+                          alt={`${view} ${type}`}
                           className="h-full w-full object-contain"
                           onError={(e) => console.error(`Error loading image: ${url}`, e)}
                           onLoad={() => console.log(`Image loaded successfully: ${url}`)}
@@ -203,13 +242,22 @@ export default function ImageViewer({ images, onRegenerateRequest, dicomShape }:
           ))}
         </div>
         <div className="flex justify-center">
-          <button 
+          <button
             className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
             onClick={() => onRegenerateRequest(midpoints)}
           >
             画像を再生成
           </button>
         </div>
+        <button
+          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+          onClick={handleDownload}
+          disabled={isLoading}
+        >
+          {isLoading ? 'Downloading...' : '3D配列データをダウンロード'}
+        </button>
+      {isLoading && <p>ダウンロード中です。お待ちください...</p>}
+      {downloadError && <p style={{ color: 'red' }}>エラー: {downloadError}</p>}
       </div>
     </div>
   );
