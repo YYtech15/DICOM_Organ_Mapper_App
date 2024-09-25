@@ -11,6 +11,7 @@ from src.utils.dicom import load_dicom
 from src.utils.nifti import load_nifti
 from src.utils.rotate import apply_rotation
 from src.utils.save import save_visualization
+from src.utils.compress import rle_encode
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
@@ -112,7 +113,7 @@ def upload_files():
                 # NIFTIファイル情報のリストを作成
                 nifti_info = {
                     'path': file_path,
-                    'value': idx + 2,  # 値は2から始まる（1は背景として予約）
+                    'value': idx + 7,  # 値は7から始まる（1は背景として予約）
                 }
                 nifti_info_list.append(nifti_info)
             else:
@@ -316,10 +317,10 @@ def regenerate_image():
         traceback.print_exc()
         return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
 
-@app.route('/download_array', methods=['GET'])
+@app.route('/download_array', methods=['GET']) 
 @login_required
 def download_array():
-    """3D配列データをプレーンテキストファイルとしてダウンロード"""
+    """圧縮した3D配列データをプレーンテキストファイルとしてダウンロード"""
     user_id = session.get('user_id')
     if not user_id:
         current_app.logger.warning(f"Attempted access without user_id in session")
@@ -337,11 +338,17 @@ def download_array():
     # メモリ上のテキストストリームを作成
     buffer = io.StringIO()
 
-    # 配列をスライスごとにバッファに書き込む
+    # 配列をスライスごとに圧縮してバッファに書き込む
     for i in range(array_data_int.shape[2]):
-        buffer.write(f"Slice {i}:\n")
-        np.savetxt(buffer, array_data_int[:, :, i], fmt='%d')
-        buffer.write("\n")
+        # 2Dスライスをフラットにする
+        flattened_slice = array_data_int[:, :, i].flatten()
+        # 圧縮する
+        compressed_slice = rle_encode(flattened_slice)
+        
+        with open("voxel.txt", 'w', encoding='utf-8') as f:
+            f.write(' '.join(compressed_slice))
+        # 圧縮したデータをバッファに書き込む
+        buffer.write(' '.join(map(str, compressed_slice)) + '\n')
 
     # バッファの内容を取得
     buffer.seek(0)
@@ -349,7 +356,7 @@ def download_array():
 
     # レスポンスを作成
     response = make_response(data)
-    response.headers['Content-Disposition'] = 'attachment; filename=3d_array.txt'
+    response.headers['Content-Disposition'] = 'attachment; filename=compressed_3d_array.txt'
     response.headers['Content-Type'] = 'text/plain'
 
     return response
