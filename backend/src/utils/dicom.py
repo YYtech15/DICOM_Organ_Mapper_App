@@ -7,12 +7,12 @@ from tqdm import tqdm
 
 # HU値の範囲と対応するボクセル値を定義
 hu_ranges = [
-    (-3000, -901, 1),  # Air
-    (-901, -499, 2),   # Lung
-    (-499, -1, 3),     # ADIPOSETISSUE
-    (-1, 200, 4),      # SOFTTISSUE
-    (200, 1700, 5),    # Bone
-    (1700, 2000, 6)    # Teeth
+    (-3000, -901, 0),  # Air
+    (-901, -499, 1),   # Lung
+    (-499, -1, 2),     # ADIPOSETISSUE
+    (-1, 200, 3),      # SOFTTISSUE
+    (200, 1700, 4),    # Bone
+    (1700, 2000, 5)    # Teeth
 ]
 
 def apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope):

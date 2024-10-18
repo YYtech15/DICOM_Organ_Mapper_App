@@ -1,5 +1,6 @@
 import io
 import matplotlib
+
 matplotlib.use('Agg')
 
 import os
@@ -12,6 +13,7 @@ from src.utils.nifti import load_nifti
 from src.utils.rotate import apply_rotation
 from src.utils.save import save_visualization
 from src.utils.compress import rle_encode
+from src.utils.crop_voxel import crop_3d_array
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
@@ -113,7 +115,7 @@ def upload_files():
                 # NIFTIファイル情報のリストを作成
                 nifti_info = {
                     'path': file_path,
-                    'value': idx + 7,  # 値は7から始まる（1は背景として予約）
+                    'value': idx + 6,  # 値は6から始まる
                 }
                 nifti_info_list.append(nifti_info)
             else:
@@ -335,18 +337,17 @@ def download_array():
     # 配列を整数型に変換
     array_data_int = array_data.astype(int)
     
+    crop_data = crop_3d_array(array_data_int)
+    
     # メモリ上のテキストストリームを作成
     buffer = io.StringIO()
 
     # 配列をスライスごとに圧縮してバッファに書き込む
-    for i in range(array_data_int.shape[2]):
+    for i in range(crop_data.shape[2]):
         # 2Dスライスをフラットにする
-        flattened_slice = array_data_int[:, :, i].flatten()
+        flattened_slice = crop_data[:, :, i].flatten()
         # 圧縮する
         compressed_slice = rle_encode(flattened_slice)
-        
-        with open("voxel.txt", 'w', encoding='utf-8') as f:
-            f.write(' '.join(compressed_slice))
         # 圧縮したデータをバッファに書き込む
         buffer.write(' '.join(map(str, compressed_slice)) + '\n')
 

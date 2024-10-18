@@ -159,7 +159,7 @@ export default function ImageViewer({ images, onRegenerateRequest, dicomShape }:
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = '3d_array.txt'; // Adjusted to match backend filename
+      a.download = 'voxel.inp'; // Adjusted to match backend filename
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
