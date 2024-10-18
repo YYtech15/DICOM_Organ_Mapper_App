@@ -8,7 +8,8 @@ from flask import Flask, current_app, request, jsonify, send_file, send_from_dir
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from functools import wraps
-from src.utils.dicom import load_dicom
+from src.utils.interpolation import bspline_interpolate_3d
+from src.utils.dicom import load_dicom_with_interpolation
 from src.utils.nifti import load_nifti
 from src.utils.rotate import apply_rotation
 from src.utils.save import save_visualization
@@ -131,12 +132,16 @@ def upload_files():
     else:
         midpoints = None  # midpointsが提供されない場合はNone
 
+    # スケールファクターを取得（デフォルトは0.5）
+    scale_factor = float(request.form.get('scale_factor', 0.5))
+    print(f"スケールファクター: {scale_factor}")
+
     # 処理と可視化
     output_dir = os.path.join(user_upload_dir, 'output_images')
     os.makedirs(output_dir, exist_ok=True)
 
     try:
-        new_3d_array, dicom_array = create_3d_array(dicom_dir, nifti_info_list)
+        new_3d_array, dicom_array = create_3d_array(dicom_dir, nifti_info_list, scale_factor)
         SESSION_DATA[user_id]['new_3d_array'] = new_3d_array
         SESSION_DATA[user_id]['dicom_data'] = dicom_array
 
@@ -187,15 +192,19 @@ def create_custom_cmap(colors):
     n_bins = 100
     return LinearSegmentedColormap.from_list('custom', colors, N=n_bins)
 
-def create_3d_array(dicom_path, nifti_data):
+def create_3d_array(dicom_path, nifti_data, scale_factor=1.0):
     """DICOMと複数のNIFTIデータから新たな3次元配列を作成"""
-    dicom_data = load_dicom(dicom_path)
+    dicom_data = load_dicom_with_interpolation(dicom_path, scale_factor)
     rotation_data = np.transpose(dicom_data, TransposeOrder)
     dicom_array = apply_rotation(rotation_data, RotationAngles)
     new_3d_array = dicom_array.copy()
 
     for nifti_info in nifti_data:
         nifti_array = load_nifti(nifti_info['path'], nifti_info['value'])
+
+        # NIFTIデータのサイズをDICOMデータに合わせてリサイズ
+        if dicom_array.shape != nifti_array.shape:
+            nifti_array = bspline_interpolate_3d(nifti_array, scale_factor)
 
         if dicom_array.shape != nifti_array.shape:
             raise ValueError(f"DICOM and NIFTI data sizes do not match for {nifti_info['path']}")

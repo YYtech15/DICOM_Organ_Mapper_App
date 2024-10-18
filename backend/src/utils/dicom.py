@@ -1,19 +1,32 @@
 # src/utils_dicom.py
-
 import pydicom
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
+import json
+import os
 
-# HU値の範囲と対応するボクセル値を定義
-hu_ranges = [
-    (-3000, -901, 0),  # Air
-    (-901, -499, 1),   # Lung
-    (-499, -1, 2),     # ADIPOSETISSUE
-    (-1, 200, 3),      # SOFTTISSUE
-    (200, 1700, 4),    # Bone
-    (1700, 2000, 5)    # Teeth
-]
+from src.utils.interpolation import bspline_interpolate_3d_chunked
+
+def load_hu_ranges(file_path='src/data/hu_ranges.json'):
+    """
+    JSON ファイルから HU ranges を読み込む
+    """
+    # スクリプトのディレクトリを基準にした絶対パスを取得
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    absolute_file_path = os.path.join(base_path, file_path)
+    
+    try:
+        with open(absolute_file_path, 'r') as f:
+            data = json.load(f)
+        return data['hu_ranges']
+    except FileNotFoundError:
+        print(f"エラー: ファイル '{absolute_file_path}' が見つかりません。")
+        print(f"現在の作業ディレクトリ: {os.getcwd()}")
+        return 
+    except json.JSONDecodeError:
+        print(f"エラー: ファイル '{absolute_file_path}' の JSON 形式が無効です。")
+        return
 
 def apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope):
     """
@@ -21,6 +34,9 @@ def apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope):
     """
     # ピクセル値をHU値に変換
     hu_array = pixel_array * rescale_slope + rescale_intercept
+    
+    # HU値の範囲と対応するボクセル値を外部ファイルから読み込む
+    hu_ranges = load_hu_ranges()
     
     # 結果を格納する配列を作成
     result = np.zeros_like(hu_array, dtype=np.uint8)
@@ -59,3 +75,21 @@ def load_dicom(directory):
         img3d[i, :, :] = apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope)
     
     return img3d
+
+def load_dicom_with_interpolation(directory, scale_factor=1.0):
+    """
+    DICOMファイルを読み込み、B-スプライン補間を適用して3D配列として返す
+    :param directory: DICOMファイルが格納されているディレクトリ
+    :param scale_factor: リサイズのスケールファクター（デフォルトは1.0で元のサイズ）
+    :return: 補間後の3D numpy配列
+    """
+    # 既存のload_dicom関数を使用してDICOMデータを読み込む
+    original_data = load_dicom(directory)
+    
+    # スケールファクターが1.0でない場合にのみ補間を適用
+    if scale_factor != 1.0:
+        print(f"スケールファクター{scale_factor}でB-スプライン補間を適用します。")
+        return bspline_interpolate_3d_chunked(original_data, scale_factor)
+    else:
+        print("スケールファクターが1.0のため、補間を適用しません。")
+        return original_data
