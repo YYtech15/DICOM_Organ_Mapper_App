@@ -116,8 +116,11 @@ def upload_files():
                 # NIFTIファイル情報のリストを作成
                 nifti_info = {
                     'path': file_path,
-                    'value': idx + 6,  # 値は6から始まる
+                    # 'value': idx + 25,
+                    # 'value': idx + 1001,
+                    'value': 1,
                 }
+                print(f"{filename}: {nifti_info['value']}")
                 nifti_info_list.append(nifti_info)
             else:
                 return jsonify({'error': 'Invalid NIFTI file type'}), 400
@@ -132,7 +135,7 @@ def upload_files():
     else:
         midpoints = None  # midpointsが提供されない場合はNone
 
-    # スケールファクターを取得（デフォルトは0.5）
+    # スケールファクターを取得
     scale_factor = float(request.form.get('scale_factor', 0.5))
     print(f"スケールファクター: {scale_factor}")
 
@@ -199,6 +202,9 @@ def create_3d_array(dicom_path, nifti_data, scale_factor=1.0):
     dicom_array = apply_rotation(rotation_data, RotationAngles)
     new_3d_array = dicom_array.copy()
 
+    # 値を1~24の範囲にクリップ
+    new_3d_array = np.clip(new_3d_array, 1, 24)
+
     for nifti_info in nifti_data:
         nifti_array = load_nifti(nifti_info['path'], nifti_info['value'])
 
@@ -224,7 +230,7 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
             if not (0 <= m < new_3d_array.shape[i]):
                 raise ValueError(f"Midpoint {m} is out of bounds for axis {i} with size {new_3d_array.shape[i]}")
 
-    colors = ['black', 'gray'] + ['red', 'green', 'blue', 'yellow', 'cyan', 'magenta'][:len(set(new_3d_array.flatten())) - 2]
+    colors = ['black', '#404040'] + ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF'][:len(set(new_3d_array.flatten())) - 2]
     custom_cmap = create_custom_cmap(colors)
 
     views = ['Sagittal', 'Coronal', 'Axial']
@@ -255,7 +261,7 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
 
         # Fused Image
         fig, ax = plt.subplots()
-        im = ax.imshow(new_slice, cmap=custom_cmap)
+        im = ax.imshow(new_slice, cmap=custom_cmap, interpolation='nearest')
         ax.set_title(f'{view} - Fused (Slice {midpoint})')
         ax.axis('off')
 
@@ -274,7 +280,7 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
 
         # Difference Image
         fig, ax = plt.subplots()
-        ax.imshow(diff_slice, cmap='hot')
+        ax.imshow(diff_slice, cmap='hot', interpolation='nearest')
         ax.set_title(f'{view} - Difference')
         ax.axis('off')
         diff_file = os.path.join(output_dir, f'{view}_Difference.png')
