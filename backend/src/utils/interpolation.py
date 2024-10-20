@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import zoom
 from tqdm import tqdm
 
-def bspline_interpolate_3d_chunked(ct_data, scale_factor, chunk_size=64):
+def bspline_interpolate_3d_chunked_ct(ct_data, scale_factor, chunk_size=64):
     """
     3次元CTデータをチャンクに分割し、B-スプライン補間を適用してリサイズする。
     :param ct_data: 入力CTデータ（3次元NumPy配列）
@@ -43,17 +43,17 @@ def bspline_interpolate_3d_chunked(ct_data, scale_factor, chunk_size=64):
     
     return result
 
-def bspline_interpolate_3d(ct_data, scale_factor):
+def bspline_interpolate_3d(data_3d, scale_factor):
     """
     3次元CTデータにB-スプライン補間を適用し、指定したスケールファクターでリサイズする。
-    :param ct_data: 入力CTデータ（3次元NumPy配列）
+    :param data_3d: 入力CT or NIFTIデータ（3次元NumPy配列）
     :param scale_factor: スケールファクター（例：0.5で半分のサイズに）
     :return: 補間後の3次元NumPy配列
     """
     # スケールファクターがリストまたはタプルでない場合、各軸に適用
     if not isinstance(scale_factor, (list, tuple, np.ndarray)):
-        scale_factor = [scale_factor] * ct_data.ndim
+        scale_factor = [scale_factor] * data_3d.ndim
     
     # B-スプライン補間（order=3は3次のスプライン補間を意味します）
-    interpolated_data = zoom(ct_data, zoom=scale_factor, order=3)
+    interpolated_data = zoom(data_3d, zoom=scale_factor, order=3)
     return interpolated_data

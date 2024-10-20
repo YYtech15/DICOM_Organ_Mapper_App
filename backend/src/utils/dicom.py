@@ -1,4 +1,3 @@
-# src/utils_dicom.py
 import pydicom
 import numpy as np
 from pathlib import Path
@@ -6,9 +5,9 @@ from tqdm import tqdm
 import json
 import os
 
-from src.utils.interpolation import bspline_interpolate_3d_chunked
+from src.utils.interpolation import bspline_interpolate_3d_chunked_ct
 
-def load_hu_ranges(file_path='src/data/hu_ranges.json'):
+def load_hu_ranges(file_path='src/data/hu_ranges_24.json'):
     """
     JSON ファイルから HU ranges を読み込む
     """
@@ -23,10 +22,10 @@ def load_hu_ranges(file_path='src/data/hu_ranges.json'):
     except FileNotFoundError:
         print(f"エラー: ファイル '{absolute_file_path}' が見つかりません。")
         print(f"現在の作業ディレクトリ: {os.getcwd()}")
-        return 
+        return None
     except json.JSONDecodeError:
         print(f"エラー: ファイル '{absolute_file_path}' の JSON 形式が無効です。")
-        return
+        return None
 
 def apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope):
     """
@@ -36,10 +35,12 @@ def apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope):
     hu_array = pixel_array * rescale_slope + rescale_intercept
     
     # HU値の範囲と対応するボクセル値を外部ファイルから読み込む
-    hu_ranges = load_hu_ranges()
+    hu_ranges = load_hu_ranges('src/data/hu_ranges_24.json')
+    if hu_ranges is None:
+        raise ValueError("Failed to load HU ranges")
     
     # 結果を格納する配列を作成
-    result = np.zeros_like(hu_array, dtype=np.uint8)
+    result = np.zeros_like(hu_array, dtype=np.uint16)
     
     # 各HU値の範囲に対して処理を行う
     for min_hu, max_hu, value in hu_ranges:
@@ -64,7 +65,7 @@ def load_dicom(directory):
     
     # 3D配列を作成
     img_shape = (len(slices), slices[0].Rows, slices[0].Columns)
-    img3d = np.zeros(img_shape, dtype=np.uint8)
+    img3d = np.zeros(img_shape, dtype=np.uint16)
     
     for i, slice in enumerate(tqdm(slices, desc="Creating 3D array")):
         pixel_array = slice.pixel_array
@@ -89,7 +90,7 @@ def load_dicom_with_interpolation(directory, scale_factor=1.0):
     # スケールファクターが1.0でない場合にのみ補間を適用
     if scale_factor != 1.0:
         print(f"スケールファクター{scale_factor}でB-スプライン補間を適用します。")
-        return bspline_interpolate_3d_chunked(original_data, scale_factor)
+        return bspline_interpolate_3d_chunked_ct(original_data, scale_factor)
     else:
         print("スケールファクターが1.0のため、補間を適用しません。")
         return original_data
