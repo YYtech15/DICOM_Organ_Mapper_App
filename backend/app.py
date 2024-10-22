@@ -4,17 +4,16 @@ import matplotlib
 matplotlib.use('Agg')
 
 import os
-from flask import Flask, current_app, request, jsonify, send_file, send_from_directory, session, redirect, url_for, make_response
+from flask import Flask, current_app, request, jsonify, send_from_directory, session, redirect, url_for, make_response
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from functools import wraps
-from src.utils.interpolation import bspline_interpolate_3d
 from src.utils.dicom import load_dicom_with_interpolation
 from src.utils.nifti import load_nifti
 from src.utils.rotate import apply_rotation
 from src.utils.save import save_visualization
 from src.utils.compress import rle_encode
-from src.utils.crop_voxel import crop_3d_array
+from src.utils.crop_voxel import crop_3d_array_max_xy
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
@@ -40,7 +39,7 @@ USERS = {
 SESSION_DATA = {}
 
 TransposeOrder = (1, 2, 0)
-RotationAngles = (180, 0, 90)
+RotationAngles = (0, 0, 90)
 
 def allowed_file(filename):
     """許可されたファイル拡張子かどうかをチェック"""
@@ -108,17 +107,29 @@ def upload_files():
         nifti_files = request.files.getlist('nifti_files')
         nifti_dir = os.path.join(user_upload_dir, 'nifti')
         os.makedirs(nifti_dir, exist_ok=True)
-        for idx, file in enumerate(nifti_files):
+
+        organ_counter = 25  # 通常の臓器用のカウンター
+        cancer_counter = 0  # がん用のカウンター（後で適切な開始値を設定）
+
+        for file in nifti_files:
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
                 file_path = os.path.join(nifti_dir, filename)
                 file.save(file_path)
-                # NIFTIファイル情報のリストを作成
+
+                # ファイル名に基づいてvalueを決定
+                if 'background' in filename.lower():
+                    value = 1
+                elif 'cancer' in filename.lower():
+                    cancer_counter += 1
+                    value = organ_counter + cancer_counter
+                else:
+                    value = organ_counter
+                    organ_counter += 1
+
                 nifti_info = {
                     'path': file_path,
-                    # 'value': idx + 25,
-                    # 'value': idx + 1001,
-                    'value': 1,
+                    'value': value,
                 }
                 print(f"{filename}: {nifti_info['value']}")
                 nifti_info_list.append(nifti_info)
@@ -208,10 +219,7 @@ def create_3d_array(dicom_path, nifti_data, scale_factor=1.0):
     for nifti_info in nifti_data:
         nifti_array = load_nifti(nifti_info['path'], nifti_info['value'])
 
-        # NIFTIデータのサイズをDICOMデータに合わせてリサイズ
-        if dicom_array.shape != nifti_array.shape:
-            nifti_array = bspline_interpolate_3d(nifti_array, scale_factor)
-
+        # NIFTIデータのサイズがDICOMデータに合うか確認
         if dicom_array.shape != nifti_array.shape:
             raise ValueError(f"DICOM and NIFTI data sizes do not match for {nifti_info['path']}")
 
@@ -352,7 +360,8 @@ def download_array():
     # 配列を整数型に変換
     array_data_int = array_data.astype(int)
     
-    crop_data = crop_3d_array(array_data_int)
+    # crop_data = array_data_int
+    crop_data = crop_3d_array_max_xy(array_data_int)
     
     # メモリ上のテキストストリームを作成
     buffer = io.StringIO()
