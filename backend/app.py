@@ -108,7 +108,7 @@ def upload_files():
         nifti_dir = os.path.join(user_upload_dir, 'nifti')
         os.makedirs(nifti_dir, exist_ok=True)
 
-        organ_counter = 25  # 通常の臓器用のカウンター
+        organ_counter = 30  # 通常の臓器用のカウンター
         cancer_counter = 0  # がん用のカウンター（後で適切な開始値を設定）
 
         for file in nifti_files:
@@ -119,10 +119,10 @@ def upload_files():
 
                 # ファイル名に基づいてvalueを決定
                 if 'background' in filename.lower():
-                    value = 1
+                    value = 1              
                 elif 'cancer' in filename.lower():
-                    cancer_counter += 1
                     value = organ_counter + cancer_counter
+                    cancer_counter += 1
                 else:
                     value = organ_counter
                     organ_counter += 1

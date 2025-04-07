@@ -7,7 +7,7 @@ import os
 
 from src.utils.interpolation import bspline_interpolate_3d_chunked_ct
 
-def load_hu_ranges(file_path='src/data/hu_ranges_24.json'):
+def load_hu_ranges(file_path='src/data/hu_ranges_29.json'):
     """
     JSON ファイルから HU ranges を読み込む
     """
@@ -35,7 +35,7 @@ def apply_hu_ranges(pixel_array, rescale_intercept, rescale_slope):
     hu_array = pixel_array * rescale_slope + rescale_intercept
     
     # HU値の範囲と対応するボクセル値を外部ファイルから読み込む
-    hu_ranges = load_hu_ranges('src/data/hu_ranges_24.json')
+    hu_ranges = load_hu_ranges('src/data/hu_ranges_29.json')
     if hu_ranges is None:
         raise ValueError("Failed to load HU ranges")
     
