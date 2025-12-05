@@ -24,6 +24,9 @@ app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 app.config['UPLOAD_FOLDER'] = './uploads'
 
+ORGAN_COUNTER_START = 20
+CANCER_COUNTER_START = 25
+
 # CORSの設定
 CORS(app, supports_credentials=True)
 
@@ -108,11 +111,12 @@ def upload_files():
         nifti_dir = os.path.join(user_upload_dir, 'nifti')
         os.makedirs(nifti_dir, exist_ok=True)
 
+        # ローカル変数として初期化
+        organ_counter = ORGAN_COUNTER_START
+        cancer_counter = CANCER_COUNTER_START
+        
         # アルファベット順でソート
         nifti_files_sorted = sorted(nifti_files, key=lambda f: f.filename.lower())
-
-        organ_counter = 25     # 通常臓器用
-        cancer_counter = 31   # cancer 用（開始番号）
 
         for file in nifti_files_sorted:
             if file and allowed_file(file.filename):
@@ -217,8 +221,9 @@ def create_3d_array(dicom_path, nifti_data, scale_factor=1.0):
     # new_3d_array は DICOM の強度をベースに作る（ここは既存仕様に合わせる）
     new_3d_array = dicom_array.copy()
 
-    # DICOM 由来の値を 1~24 に制限（もしこのクリップが不要なら無効化してもOK）
-    new_3d_array = np.clip(new_3d_array, 1, 24)
+    # # DICOM 由来の値を 1~24 に制限（もしこのクリップが不要なら無効化してもOK）
+    # new_3d_array = np.clip(new_3d_array, 1, 24)    
+    new_3d_array = np.clip(new_3d_array, 1, 19)    
 
     # デバッグ用：各 NIfTI の情報を出力
     for nifti_info in nifti_data:
@@ -241,10 +246,10 @@ def create_3d_array(dicom_path, nifti_data, scale_factor=1.0):
             print(f"Warning: NIfTI {path} has 0 mask voxels — skipping.")
             continue
 
-        # 上書き（nifti_array が既に replacement_value を持つので nifti_array != 0 で判定）
+        # マスク領域を取得（0以外の全ての値）
         mask = nifti_array != 0
-        # 代入（この方法は np.where と等価だが、デバッグしやすい）
-        new_3d_array[mask] = nifti_array[mask]
+        # マスク領域に指定されたvalueを強制的に割り当て
+        new_3d_array[mask] = value  # nifti_array[mask] ではなく value を使う
 
     return new_3d_array, dicom_array
 def create_label_colormap(unique_labels):
@@ -262,16 +267,20 @@ def create_label_colormap(unique_labels):
     ]
 
     label_to_color = {}
+    
+    # ローカル変数として初期化
+    organ_counter = ORGAN_COUNTER_START
+    cancer_counter = CANCER_COUNTER_START
 
     for label in sorted(unique_labels):
         if label == 0:
             label_to_color[label] = "black"
         elif label == 1:
             label_to_color[label] = "#404040"       # background
-        elif 25 <= label < 31:
+        elif organ_counter <= label < cancer_counter:
             idx = (label - 25) % len(organ_colors)
             label_to_color[label] = organ_colors[idx]
-        elif label >= 31:
+        elif label >= cancer_counter:
             idx = (label - 100) % len(cancer_colors)
             label_to_color[label] = cancer_colors[idx]
         else:
