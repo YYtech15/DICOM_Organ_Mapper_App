@@ -13,9 +13,12 @@ def crop_3d_array_max_xy(arr):
     numpy.ndarray: すべてのxy平面で等しく切り出され、z軸方向は元の大きさを維持した3D配列。
     """
     # 入力配列の検証
-    if arr.shape != (256, 256, 485) or arr.min() < 1:
-        raise ValueError("入力配列は256×256×485の形状で、値は1から24の範囲内である必要があります。")
-
+    # if arr.shape != (256, 256, 485) or arr.min() < 1:
+        # raise ValueError(f"現在は{arr.shape}の形状です。256×256×485の形状で、値は1から24の範囲内である必要があります。")
+    # if arr.shape != (256, 256, 217) or arr.min() < 1:
+    #     raise ValueError(f"現在は{arr.shape}の形状です。256×256×217の形状で、値は1から24の範囲内である必要があります。")
+    # if arr.shape != (256, 256, 377) or arr.min() < 1:
+    #     raise ValueError(f"現在は{arr.shape}の形状です。256×256×217の形状で、値は1から24の範囲内である必要があります。")
     # z軸に沿って非1要素の位置を確認
     non_one = arr != 1
     

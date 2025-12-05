@@ -108,20 +108,25 @@ def upload_files():
         nifti_dir = os.path.join(user_upload_dir, 'nifti')
         os.makedirs(nifti_dir, exist_ok=True)
 
-        organ_counter = 30  # 通常の臓器用のカウンター
-        cancer_counter = 0  # がん用のカウンター（後で適切な開始値を設定）
+        # アルファベット順でソート
+        nifti_files_sorted = sorted(nifti_files, key=lambda f: f.filename.lower())
 
-        for file in nifti_files:
+        organ_counter = 25     # 通常臓器用
+        cancer_counter = 31   # cancer 用（開始番号）
+
+        for file in nifti_files_sorted:
             if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
                 file_path = os.path.join(nifti_dir, filename)
                 file.save(file_path)
 
-                # ファイル名に基づいてvalueを決定
-                if 'background' in filename.lower():
-                    value = 1              
-                elif 'cancer' in filename.lower():
-                    value = organ_counter + cancer_counter
+                fname = filename.lower()
+
+                # ---- value の振り分け ----
+                if "background" in fname:
+                    value = 1
+                elif "cancer" in fname or "lymph" in fname:
+                    value = cancer_counter
                     cancer_counter += 1
                 else:
                     value = organ_counter
@@ -131,8 +136,9 @@ def upload_files():
                     'path': file_path,
                     'value': value,
                 }
-                print(f"{filename}: {nifti_info['value']}")
+                print(f"{filename}: {value}")
                 nifti_info_list.append(nifti_info)
+
             else:
                 return jsonify({'error': 'Invalid NIFTI file type'}), 400
 
@@ -202,33 +208,87 @@ def get_dicom_shape():
     else:
         return jsonify({'error': 'DICOM data not found'}), 400
 
-def create_custom_cmap(colors):
-    n_bins = 100
-    return LinearSegmentedColormap.from_list('custom', colors, N=n_bins)
-
 def create_3d_array(dicom_path, nifti_data, scale_factor=1.0):
     """DICOMと複数のNIFTIデータから新たな3次元配列を作成"""
     dicom_data = load_dicom_with_interpolation(dicom_path, scale_factor)
     rotation_data = np.transpose(dicom_data, TransposeOrder)
     dicom_array = apply_rotation(rotation_data, RotationAngles)
+
+    # new_3d_array は DICOM の強度をベースに作る（ここは既存仕様に合わせる）
     new_3d_array = dicom_array.copy()
 
-    # 値を1~24の範囲にクリップ
+    # DICOM 由来の値を 1~24 に制限（もしこのクリップが不要なら無効化してもOK）
     new_3d_array = np.clip(new_3d_array, 1, 24)
 
+    # デバッグ用：各 NIfTI の情報を出力
     for nifti_info in nifti_data:
-        nifti_array = load_nifti(nifti_info['path'], nifti_info['value'])
+        path = nifti_info.get('path')
+        value = nifti_info.get('value')
+        # load_nifti は replacement_value を埋め込んだ配列を返す
+        nifti_array = load_nifti(path, replacement_value=value)
 
-        # NIFTIデータのサイズがDICOMデータに合うか確認
+        # サイズチェック
         if dicom_array.shape != nifti_array.shape:
-            raise ValueError(f"DICOM and NIFTI data sizes do not match for {nifti_info['path']}")
+            raise ValueError(f"DICOM and NIFTI data sizes do not match for {path}: dicom {dicom_array.shape} vs nifti {nifti_array.shape}")
 
-        new_3d_array = np.where(nifti_array != 0, nifti_info['value'], new_3d_array)
+        # デバッグ出力：非ゼロボクセル数を出す（ここで 0 ならその NIfTI は空）
+        nonzero_count = int(np.count_nonzero(nifti_array))
+        print(f"[NIFTI LOAD] file={os.path.basename(path)}, assigned_value={value}, nonzero_voxels={nonzero_count}")
+
+        if nonzero_count == 0:
+            # 重要：ここで 0 なら "そのファイルには該当ラベル領域が無い" ことを意味する
+            # 必要なら警告・スキップ
+            print(f"Warning: NIfTI {path} has 0 mask voxels — skipping.")
+            continue
+
+        # 上書き（nifti_array が既に replacement_value を持つので nifti_array != 0 で判定）
+        mask = nifti_array != 0
+        # 代入（この方法は np.where と等価だが、デバッグしやすい）
+        new_3d_array[mask] = nifti_array[mask]
 
     return new_3d_array, dicom_array
+def create_label_colormap(unique_labels):
+    """ラベル値に基づく完全固定カラーマップを作成"""
+
+    organ_colors = [
+        "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+        "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
+        "#bcbd22", "#17becf", "#ff1493", "#00fa9a"
+    ]
+
+    cancer_colors = [
+        "#ff0000", "#cc0000", "#990000", "#ff4d4d",
+        "#ff6666", "#ff8080"
+    ]
+
+    label_to_color = {}
+
+    for label in sorted(unique_labels):
+        if label == 0:
+            label_to_color[label] = "black"
+        elif label == 1:
+            label_to_color[label] = "#404040"       # background
+        elif 25 <= label < 31:
+            idx = (label - 25) % len(organ_colors)
+            label_to_color[label] = organ_colors[idx]
+        elif label >= 31:
+            idx = (label - 100) % len(cancer_colors)
+            label_to_color[label] = cancer_colors[idx]
+        else:
+            # fallback
+            label_to_color[label] = "#ffffff"
+
+    # colormap を作成
+    colors = [label_to_color[l] for l in sorted(unique_labels)]
+    cmap = matplotlib.colors.ListedColormap(colors)
+
+    # 値→色のインデックス用に辞書も返す
+    index_map = {l: i for i, l in enumerate(sorted(unique_labels))}
+    return cmap, index_map
+
 
 def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
-    """3次元配列を可視化し、各断面ごとに画像を保存"""
+    """3次元配列を可視化し、各断面ごとに画像を保存（統一配色版）"""
     if midpoints is None:
         midpoints = [s // 2 for s in new_3d_array.shape]
     else:
@@ -238,8 +298,20 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
             if not (0 <= m < new_3d_array.shape[i]):
                 raise ValueError(f"Midpoint {m} is out of bounds for axis {i} with size {new_3d_array.shape[i]}")
 
-    colors = ['black', '#404040'] + ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#00FFFF', '#FF00FF'][:len(set(new_3d_array.flatten())) - 2]
-    custom_cmap = create_custom_cmap(colors)
+    # --- 固定カラーマップを使用 ---
+    unique_labels = np.unique(new_3d_array)
+    print(f"unique_labels: {unique_labels}")
+    custom_cmap, index_map = create_label_colormap(unique_labels)
+
+    # カラーマップのインデックスに変換
+    indexed_array = np.vectorize(index_map.get)(new_3d_array)
+
+    # 全体の最小値・最大値を事前に計算（統一配色のため）
+    dicom_vmin, dicom_vmax = dicom_data.min(), dicom_data.max()
+    new_vmin, new_vmax = new_3d_array.min(), new_3d_array.max()
+    
+    # 差分画像の範囲も事前に計算
+    diff_vmin, diff_vmax = (new_3d_array - dicom_data).min(), (new_3d_array - dicom_data).max()
 
     views = ['Sagittal', 'Coronal', 'Axial']
     image_files = []
@@ -257,9 +329,9 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
 
         diff_slice = new_slice - dicom_slice
 
-        # DICOM Slice
+        # DICOM Slice（グレースケールは統一範囲を適用）
         fig, ax = plt.subplots()
-        ax.imshow(dicom_slice, cmap='gray')
+        ax.imshow(dicom_slice, cmap='gray', vmin=dicom_vmin, vmax=dicom_vmax)
         ax.set_title(f'{view} - DICOM (Slice {midpoint})')
         ax.axis('off')
         dicom_file = os.path.join(output_dir, f'{view}_DICOM.png')
@@ -267,9 +339,13 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
         plt.close(fig)
         image_files.append({'view': view, 'type': 'DICOM', 'file': dicom_file})
 
-        # Fused Image
+        # Fused Image（カスタムカラーマップに統一範囲を適用）
         fig, ax = plt.subplots()
-        im = ax.imshow(new_slice, cmap=custom_cmap, interpolation='nearest')
+        indexed_slice = indexed_array[midpoint, :, :] if view=="Sagittal" else \
+                 indexed_array[:, midpoint, :] if view=="Coronal" else \
+                 indexed_array[:, :, midpoint]
+        im = ax.imshow(indexed_slice, cmap=custom_cmap, interpolation='nearest')
+
         ax.set_title(f'{view} - Fused (Slice {midpoint})')
         ax.axis('off')
 
@@ -286,9 +362,10 @@ def visualize_3d_array(new_3d_array, dicom_data, output_dir, midpoints=None):
         plt.close(fig)
         image_files.append({'view': view, 'type': 'Fused', 'file': fused_file})
 
-        # Difference Image
+        # Difference Image（hot カラーマップに統一範囲を適用）
         fig, ax = plt.subplots()
-        ax.imshow(diff_slice, cmap='hot', interpolation='nearest')
+        ax.imshow(diff_slice, cmap='hot', interpolation='nearest', 
+                 vmin=diff_vmin, vmax=diff_vmax)
         ax.set_title(f'{view} - Difference')
         ax.axis('off')
         diff_file = os.path.join(output_dir, f'{view}_Difference.png')
